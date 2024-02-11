@@ -10,7 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var foodCollection *mongo.Collection = database.OpenCollection(database.Client, "food")
+var foodCollection *mongo.Collection = database.OpenConnection(database.Client, "food")
 
 func main() {
 	port := os.Getenv("PORT")
@@ -23,7 +23,7 @@ func main() {
 	routes.UserRoutes(router)
 	router.Use(middleware.Authentication())
 
-	routes.FootRoutes(router)
+	routes.FoodRoutes(router)
 	routes.MenuRoutes(router)
 	routes.TableRoutes(router)
 	routes.OrderRoutes(router)
