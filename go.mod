@@ -2,7 +2,10 @@ module github.com/rongdo4897/restaurant-manager-go
 
 go 1.18
 
-require github.com/gin-gonic/gin v1.9.1
+require (
+	github.com/gin-gonic/gin v1.9.1
+	go.mongodb.org/mongo-driver v1.13.1
+)
 
 require (
 	github.com/bytedance/sonic v1.10.2 // indirect
@@ -30,7 +33,6 @@ require (
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20201027041543-1326539a0a0a // indirect
-	go.mongodb.org/mongo-driver v1.13.1 // indirect
 	golang.org/x/arch v0.7.0 // indirect
 	golang.org/x/crypto v0.19.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
