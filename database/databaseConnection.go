@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// Trả về 1 client kết nối tới mongo
 func DBInstance() *mongo.Client {
 	MongoURL := "mongodb://localhost:27017"
 
@@ -34,7 +35,8 @@ func DBInstance() *mongo.Client {
 // Tạo 1 biến toàn cục cho Client sau khi kết nối
 var Client *mongo.Client = DBInstance()
 
-func OpenConnection(client *mongo.Client, collectionName string) *mongo.Collection {
+// Kết nối tới database `restaurant` và trả về bảng được chỉ định `collectionName`
+func OpenCollection(client *mongo.Client, collectionName string) *mongo.Collection {
 	var collection = client.Database("restaurant").Collection(collectionName)
 	return collection
 }
