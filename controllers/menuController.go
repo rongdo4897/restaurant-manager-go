@@ -187,3 +187,8 @@ func UpdateMenu() gin.HandlerFunc {
 		}
 	}
 }
+
+// Kiểm tra xem thời gian `check` có nằm trong khoảng thời gian start và end không
+func inTimeSpan(start, end, check time.Time) bool {
+	return start.After(check) && end.After(start)
+}
