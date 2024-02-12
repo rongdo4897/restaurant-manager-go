@@ -54,6 +54,7 @@ func CreateFood() gin.HandlerFunc {
 		// Kiểm tra xem yêu cầu từ http có tham chiếu được tới `foodModel` không
 		if err := c.BindJSON(&foodModel); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 
 		// validate.Struct() được sử dụng để kiểm tra xem một biến cấu trúc có đáp ứng được các quy tắc kiểm tra hợp lệ (validation rules) đã được xác định hay không.
