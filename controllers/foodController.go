@@ -203,9 +203,6 @@ func UpdateFood() gin.HandlerFunc {
 		var menuModel models.Menu
 		var foodModel models.Food
 
-		// Lấy param `food_id` từ request
-		food_id := c.Param("food_id")
-
 		// Kiểm tra xem yêu cầu từ http có tham chiếu được tới `foodModel` không
 		if err := c.BindJSON(&foodModel); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -250,6 +247,8 @@ func UpdateFood() gin.HandlerFunc {
 			Upsert: &upsert,
 		}
 
+		// Lấy param `food_id` từ request
+		food_id := c.Param("food_id")
 		// Tạo 1 bản ghi từ `food_id` bên trên để dùng làm giá trị filter
 		filter := bson.M{"food_id": food_id}
 
