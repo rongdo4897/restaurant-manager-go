@@ -10,6 +10,8 @@ import (
 	"github.com/rongdo4897/restaurant-manager-go/database"
 	"github.com/rongdo4897/restaurant-manager-go/models"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type InvoiceViewFormat struct {
@@ -94,12 +96,113 @@ func GetInvoice() gin.HandlerFunc {
 
 func CreateInvoice() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 
+		var invoiceModel models.Invoice
+		var orderModel models.Order
+
+		// Kiểm tra xem yêu cầu từ http có tham chiếu được tới `invoiceModel` không
+		if err := c.BindJSON(&invoiceModel); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Kiểm tra xem `order_id` có tồn tại không và dữ liệu từ bảng `order` có tham chiếu được tới `orderModel` không
+		err := orderCollection.FindOne(ctx, bson.M{"order_id": invoiceModel.Order_id}).Decode(&orderModel)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "order not found"})
+			return
+		}
+
+		// Set các giá trị
+		if invoiceModel.Payment_status == nil {
+			status := "PENDING"
+			invoiceModel.Payment_status = &status
+		}
+
+		invoiceModel.Payment_due_date, _ = time.Parse(time.RFC3339, time.Now().AddDate(0, 0, 1).Format(time.RFC3339))
+		invoiceModel.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		invoiceModel.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		invoiceModel.ID = primitive.NewObjectID()
+		invoiceModel.Invoice_id = invoiceModel.ID.Hex()
+
+		// Kiểm tra validate
+		validationErr := validate.Struct(invoiceModel)
+		if validationErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+			return
+		}
+
+		// Update lên mongo
+		result, err := invoiceCollection.InsertOne(ctx, invoiceModel)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "invoice item was not created - " + err.Error()})
+			return
+		}
+		defer cancel()
+
+		c.JSON(http.StatusOK, result)
 	}
 }
 
 func UpdateInvoice() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 
+		var invoiceModel models.Invoice
+
+		// Kiểm tra xem yêu cầu từ http có tham chiếu được tới `orderModel` không
+		if err := c.BindJSON(&invoiceModel); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		invoice_id := c.Param("invoice_id")
+		filter := bson.M{"invoice_id": invoice_id}
+
+		// Tạo đối tượng update
+		var updateObj primitive.D
+
+		// Set các giá trị
+		if invoiceModel.Payment_method != nil {
+			updateObj = append(updateObj, bson.E{Key: "payment_method", Value: invoiceModel.Payment_method})
+		}
+
+		if invoiceModel.Payment_status != nil {
+			updateObj = append(updateObj, bson.E{Key: "payment_status", Value: invoiceModel.Payment_status})
+		} else {
+			status := "PENDING"
+			invoiceModel.Payment_status = &status
+			updateObj = append(updateObj, bson.E{Key: "payment_status", Value: invoiceModel.Payment_status})
+		}
+
+		// Cập nhật lại `updated_at`
+		invoiceModel.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		updateObj = append(updateObj, bson.E{Key: "updated_at", Value: invoiceModel.Updated_at})
+
+		// Đây là một biến boolean được sử dụng để chỉ định xem truy vấn cập nhật có nên thực hiện một phép chèn mới (upsert) nếu không tìm thấy tài liệu phù hợp không.
+		// Trong trường hợp này, giá trị true cho biết rằng upsert được kích hoạt.
+		upsert := true
+		// truy vấn cập nhật sẽ thực hiện một phép upsert nếu không tìm thấy tài liệu phù hợp vì đã set = true.
+		opt := options.UpdateOptions{
+			Upsert: &upsert,
+		}
+
+		// update lại data trên mongo
+		result, err := orderCollection.UpdateOne(
+			ctx,
+			filter,
+			bson.D{{Key: "$set", Value: updateObj}},
+			&opt,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invoice update failed - " + err.Error()})
+			return
+		}
+
+		defer cancel()
+		c.JSON(http.StatusOK, result)
 	}
 }
