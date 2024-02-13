@@ -60,7 +60,52 @@ func GetOrder() gin.HandlerFunc {
 
 func CreateOrder() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 
+		var orderModel models.Order
+		var tableModel models.Table
+
+		// Kiểm tra xem yêu cầu từ http có tham chiếu được tới `orderModel` không
+		if err := c.BindJSON(&orderModel); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// validate.Struct() được sử dụng để kiểm tra xem một biến cấu trúc có đáp ứng được các quy tắc kiểm tra hợp lệ (validation rules) đã được xác định hay không.
+		// Quy tắc kiểm tra này thường được định nghĩa thông qua các tag validate trong các trường của cấu trúc.
+		validationErr := validate.Struct(orderModel)
+		if validationErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+			return
+		}
+
+		// Kiểm tra `table_id` có tồn tại không
+		if orderModel.Table_id != nil {
+			// Tìm kiếm 1 tài liệu table từ bảng `table` với `table_id` từ request và kết quả trả về được tham chiếu tới tableModel
+			err := tableCollection.FindOne(ctx, bson.M{"table_id": orderModel.Table_id}).Decode(&tableModel)
+			defer cancel()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "table was not found"})
+				return
+			}
+		}
+
+		// Gán lại các giá trị khác
+		orderModel.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		orderModel.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+
+		orderModel.ID = primitive.NewObjectID()
+		orderModel.Order_id = orderModel.ID.Hex()
+
+		// Update lên mongo
+		result, err := orderCollection.InsertOne(ctx, orderModel)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "order item was not created - " + err.Error()})
+			return
+		}
+		defer cancel()
+
+		c.JSON(http.StatusOK, result)
 	}
 }
 
