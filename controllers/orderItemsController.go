@@ -84,7 +84,59 @@ func GetOrderItemsByOrder() gin.HandlerFunc {
 
 func CreateOrderItem() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 
+		var orderItemPack OrderItemPack
+		var orderModel models.Order
+
+		// Kiểm tra request gửi lên có map với kiểu `OrderItemPack` không
+		if err := c.BindJSON(&orderItemPack); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Tạo danh sách dữ liệu OrderItem được khởi tạo
+		orderItemsToBeInserted := []interface{}{}
+
+		// Set giá trị
+		orderModel.Order_date, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		orderModel.Table_id = orderItemPack.Table_id
+
+		// Lấy `order_id` dựa trên orderModel
+		order_id := orderItemOrderCreator(orderModel)
+
+		for _, orderItem := range orderItemPack.Order_items {
+			orderItem.Order_id = order_id
+
+			// Validate kiểu dữ liệu đầu vào OrderItem
+			validateErr := validate.Struct(orderItem)
+			if validateErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": validateErr.Error()})
+				return
+			}
+
+			// Gán các giá trị cho OrderItem
+			orderItem.ID = primitive.NewObjectID()
+			orderItem.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+			orderItem.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+			orderItem.Order_item_id = orderItem.ID.Hex()
+			var number = toFixed(*orderItem.Unit_price, 2)
+			orderItem.Unit_price = &number
+
+			// Append OrderItem vào mảng
+			orderItemsToBeInserted = append(orderItemsToBeInserted, orderItem)
+		}
+
+		// Thêm dữ liệu danh sách OrderItem bên trên vào mongo
+		insertOrderItemResult, err := orderItemCollection.InsertMany(ctx, orderItemsToBeInserted)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Insert list order items failed - " + err.Error()})
+			return
+		}
+		defer cancel()
+
+		c.JSON(http.StatusOK, insertOrderItemResult)
 	}
 }
 
