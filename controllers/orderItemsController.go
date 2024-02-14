@@ -49,9 +49,29 @@ func GetOrderItem() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 		defer cancel()
 
+		order_item_id := c.Param("order_item_id")
+		var orderItemModel models.OrderItem
+
+		// Lấy data dựa trên `order_item_id`
+		err := orderItemCollection.FindOne(ctx, bson.M{"order_item_id": order_item_id}).Decode(orderItemModel)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while fetching the order item"})
+			return
+		}
+
+		c.JSON(http.StatusOK, orderItemModel)
+	}
+}
+
+func GetOrderItemsByOrder() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+
 		order_id := c.Param("order_id")
 
 		// Lấy danh sách order item dựa trên `order_id` được cung cấp từ request
+		// 1 order có thể bao gồm nhiều item
 		allOrderItems, err := itemByOrder(ctx, cancel, order_id)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while listing order items by order id"})
@@ -59,12 +79,6 @@ func GetOrderItem() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, allOrderItems)
-	}
-}
-
-func GetOrderItemsByOrder() gin.HandlerFunc {
-	return func(c *gin.Context) {
-
 	}
 }
 
