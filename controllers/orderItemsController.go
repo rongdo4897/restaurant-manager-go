@@ -46,7 +46,19 @@ func GetOrderItems() gin.HandlerFunc {
 
 func GetOrderItem() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 
+		order_id := c.Param("order_id")
+
+		// Lấy danh sách order item dựa trên `order_id` được cung cấp từ request
+		allOrderItems, err := itemByOrder(ctx, cancel, order_id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while listing order items by order id"})
+			return
+		}
+
+		c.JSON(http.StatusOK, allOrderItems)
 	}
 }
 
@@ -68,6 +80,6 @@ func UpdateOrderItem() gin.HandlerFunc {
 	}
 }
 
-func itemByOrder(id string) (orderItems []primitive.M, err error) {
+func itemByOrder(ctx context.Context, cancel context.CancelFunc, id string) (orderItems []primitive.M, err error) {
 	return make([]primitive.M, 0), nil
 }
