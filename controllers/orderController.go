@@ -26,13 +26,14 @@ func GetOrders() gin.HandlerFunc {
 		// bson.M{} là một bộ lọc trống, chỉ đơn giản là yêu cầu tất cả các tài liệu.
 		result, err := orderCollection.Find(context.TODO(), bson.M{})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while listing order items"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while listing order"})
 			return
 		}
 
 		var allOrders []bson.M
 		if err = result.All(ctx, &allOrders); err != nil {
 			log.Fatal(err)
+			return
 		}
 
 		c.JSON(http.StatusOK, allOrders)

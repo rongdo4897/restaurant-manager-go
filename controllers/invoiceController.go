@@ -44,6 +44,7 @@ func GetInvoices() gin.HandlerFunc {
 		var allInvoices []bson.M
 		if err = result.All(ctx, &allInvoices); err != nil {
 			log.Fatal(err)
+			return
 		}
 
 		c.JSON(http.StatusOK, allInvoices)

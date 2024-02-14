@@ -42,6 +42,7 @@ func GetMenus() gin.HandlerFunc {
 		// Gán lại tất cả từ mongo.Cursor `result` vào mảng `allMenus` để trả về chuỗi json có kết quả là MAP
 		if err = result.All(ctx, &allMenus); err != nil {
 			log.Fatal(err)
+			return
 		}
 
 		c.JSON(http.StatusOK, allMenus)
