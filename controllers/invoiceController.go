@@ -70,7 +70,7 @@ func GetInvoice() gin.HandlerFunc {
 		var invoiceView InvoiceViewFormat
 
 		// Trả về danh sách item dựa trên `order_id`
-		allOrderItems, err := itemByOrder(invoiceModel.Order_id)
+		allOrderItems, err := itemByOrder(ctx, cancel, invoiceModel.Order_id)
 		if err != nil {
 			log.Fatal(err)
 			return

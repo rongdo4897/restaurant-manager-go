@@ -11,6 +11,7 @@ import (
 	"github.com/rongdo4897/restaurant-manager-go/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var orderItemCollection = database.OpenCollection(database.Client, "orderItem")
@@ -142,7 +143,59 @@ func CreateOrderItem() gin.HandlerFunc {
 
 func UpdateOrderItem() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 
+		var orderItemModel models.OrderItem
+		// Kiểm tra xem yêu cầu từ http có tham chiếu được tới `orderItemModel` không
+		if err := c.BindJSON(&orderItemModel); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Lấy `order_item_id` từ request
+		orderItemId := c.Param("order_item_id")
+		// Tạo giá trị cho bộ lọc
+		filter := bson.M{"order_item_id": orderItemId}
+
+		// Tạo biến cho việc update
+		var updateObj primitive.D
+
+		// Set lại giá trị
+		if orderItemModel.Unit_price != nil {
+			updateObj = append(updateObj, bson.E{Key: "unit_price", Value: *&orderItemModel.Unit_price})
+		}
+		if orderItemModel.Quantity != nil {
+			updateObj = append(updateObj, bson.E{Key: "quantity", Value: *orderItemModel.Quantity})
+		}
+		if orderItemModel.Food_id != nil {
+			updateObj = append(updateObj, bson.E{Key: "food_id", Value: *orderItemModel.Food_id})
+		}
+		orderItemModel.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		updateObj = append(updateObj, bson.E{Key: "updated_at", Value: orderItemModel.Updated_at})
+
+		// Đây là một biến boolean được sử dụng để chỉ định xem truy vấn cập nhật có nên thực hiện một phép chèn mới (upsert) nếu không tìm thấy tài liệu phù hợp không.
+		// Trong trường hợp này, giá trị true cho biết rằng upsert được kích hoạt.
+		upsert := true
+		// truy vấn cập nhật sẽ thực hiện một phép upsert nếu không tìm thấy tài liệu phù hợp vì đã set = true.
+		opt := options.UpdateOptions{
+			Upsert: &upsert,
+		}
+
+		// Update lại giá trị trong mongo
+		result, err := orderItemCollection.UpdateOne(
+			ctx,
+			filter,
+			bson.D{{Key: "$set", Value: updateObj}},
+			&opt,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Order item update failed - " + err.Error()})
+			return
+		}
+
+		defer cancel()
+		c.JSON(http.StatusOK, result)
 	}
 }
 
