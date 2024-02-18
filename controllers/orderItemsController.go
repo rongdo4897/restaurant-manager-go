@@ -11,6 +11,7 @@ import (
 	"github.com/rongdo4897/restaurant-manager-go/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -200,5 +201,341 @@ func UpdateOrderItem() gin.HandlerFunc {
 }
 
 func itemByOrder(ctx context.Context, cancel context.CancelFunc, id string) (orderItems []primitive.M, err error) {
-	return make([]primitive.M, 0), nil
+	matchStage, lookupStage, unwindStage := queryStage(id)
+	lookupOrderStage, unwindOrderStage := queryOrderStage()
+	lookupTableStage, unwindTableStage := queryTableStage()
+	projectStage := queryProjectStage()
+	groupStage := queryGroupStage()
+	projectStage2 := queryProjectStage2()
+
+	result, err := orderItemCollection.Aggregate(ctx, mongo.Pipeline{
+		matchStage,
+		lookupStage,
+		unwindStage,
+		lookupOrderStage,
+		unwindOrderStage,
+		lookupTableStage,
+		unwindTableStage,
+		projectStage,
+		groupStage,
+		projectStage2,
+	})
+
+	if err != nil {
+		panic(err)
+	}
+
+	var OrderItems []primitive.M
+	if err = result.All(ctx, &OrderItems); err != nil {
+		panic(err)
+	}
+
+	defer cancel()
+
+	return OrderItems, err
+}
+
+func queryStage(id string) (match, lookup, unwind bson.D) {
+	/*
+		- $match được sử dụng để lọc các tài liệu từ một bộ sưu tập dựa trên các điều kiện cho trước.
+		- Key: "order_id", Value: id: đây là điều kiện để lọc các tài liệu trong bộ sưu tập.
+			Trong trường hợp này, chúng ta muốn lọc các tài liệu mà có trường order_id có giá trị bằng id.
+
+		=> câu lệnh này sẽ tạo ra một stage {$match} trong truy vấn aggregation,
+			lọc các tài liệu trong bộ sưu tập sao cho trường order_id của chúng có giá trị bằng id.
+	*/
+	matchStage := bson.D{{Key: "$match", Value: bson.D{{Key: "order_id", Value: id}}}}
+	/*
+		- $lookup: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để thực hiện việc join dữ liệu từ một bộ sưu tập (collection) khác vào trong
+			bộ sưu tập hiện tại.
+		- Key: "from", Value: "food": Đây là tên của bộ sưu tập mà chúng ta muốn tham gia vào truy vấn.
+		- Key: "localField", Value: "food_id": Đây là trường trong bộ sưu tập hiện tại
+			mà chúng ta sẽ sử dụng để so khớp với trường trong bộ sưu tập từ.
+		- Key: "foreignField", Value: "food_id": Đây là trường trong bộ sưu tập từ mà chúng ta
+			sẽ sử dụng để so khớp với trường trong bộ sưu tập hiện tại.
+		- Key: "as", Value: "food": Đây là tên của trường mới mà chúng ta sẽ tạo ra
+			sau khi thực hiện việc join.
+
+		=> câu lệnh này sẽ tạo ra một stage {$lookup} trong truy vấn aggregation,
+			thực hiện việc join dữ liệu từ bộ sưu tập "food" vào bộ sưu tập hiện tại
+			dựa trên trường "food_id", và kết quả sẽ được lưu vào một trường mới có tên là "food".
+	*/
+	lookupStage := bson.D{
+		{
+			Key: "$lookup",
+			Value: bson.D{
+				{Key: "from", Value: "food"},
+				{Key: "localField", Value: "food_id"},
+				{Key: "foreignField", Value: "food_id"},
+				{Key: "as", Value: "food"},
+			},
+		},
+	}
+	/*
+		- $unwind: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để tách các mảng (arrays) trong tài liệu thành các tài liệu riêng lẻ.
+			Điều này hữu ích khi bạn muốn xử lý dữ liệu mảng như một tập hợp các tài liệu riêng lẻ.
+		- Key: "path", Value: "$food": Đây là đường dẫn đến trường mảng trong tài liệu mà chúng ta muốn tách.
+			Trong trường hợp này, chúng ta đang tách trường mảng "food".
+		- Key: "preserveNullAndEmptyArrays", Value: true: Điều này xác định xem liệu các giá trị null
+			hoặc mảng trống sẽ được bảo tồn trong kết quả sau khi tách hay không.
+			Nếu được đặt là true, các giá trị null hoặc mảng trống sẽ được bảo tồn;
+			nếu false, các tài liệu có chứa giá trị null hoặc mảng trống sẽ bị loại bỏ khỏi kết quả.
+
+		=> câu lệnh này sẽ tạo ra một stage {$unwind} trong truy vấn aggregation,
+			tách trường mảng "food" trong tài liệu thành các tài liệu riêng lẻ,
+			và bảo tồn các giá trị null hoặc mảng trống trong kết quả sau khi tách.
+	*/
+	unwindStage := bson.D{
+		{
+			Key: "$unwind",
+			Value: bson.D{
+				{Key: "path", Value: "$food"},
+				{Key: "preserveNullAndEmptyArrays", Value: true},
+			},
+		},
+	}
+
+	return matchStage, lookupStage, unwindStage
+}
+
+func queryOrderStage() (lookup, unwind bson.D) {
+	/*
+		- $lookup: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để thực hiện việc join dữ liệu từ một bộ sưu tập (collection) khác vào trong
+			bộ sưu tập hiện tại.
+		- Key: "from", Value: "order": Đây là tên của bộ sưu tập mà chúng ta muốn tham gia vào truy vấn.
+		- Key: "localField", Value: "order_id": Đây là trường trong bộ sưu tập hiện tại
+			mà chúng ta sẽ sử dụng để so khớp với trường trong bộ sưu tập từ.
+		- Key: "foreignField", Value: "order_id": Đây là trường trong bộ sưu tập từ mà chúng ta
+			sẽ sử dụng để so khớp với trường trong bộ sưu tập hiện tại.
+		- Key: "as", Value: "order": Đây là tên của trường mới mà chúng ta sẽ tạo ra
+			sau khi thực hiện việc join.
+
+		=> câu lệnh này sẽ tạo ra một stage {$lookup} trong truy vấn aggregation,
+			thực hiện việc join dữ liệu từ bộ sưu tập "order" vào bộ sưu tập hiện tại
+			dựa trên trường "order_id", và kết quả sẽ được lưu vào một trường mới có tên là "order".
+	*/
+	lookupOrderStage := bson.D{
+		{
+			Key: "$lookup",
+			Value: bson.D{
+				{Key: "from", Value: "order"},
+				{Key: "localField", Value: "order_id"},
+				{Key: "foreignField", Value: "order_id"},
+				{Key: "as", Value: "order"},
+			},
+		},
+	}
+	/*
+		- $unwind: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để tách các mảng (arrays) trong tài liệu thành các tài liệu riêng lẻ.
+			Điều này hữu ích khi bạn muốn xử lý dữ liệu mảng như một tập hợp các tài liệu riêng lẻ.
+		- Key: "path", Value: "$order": Đây là đường dẫn đến trường mảng trong tài liệu mà chúng ta muốn tách.
+			Trong trường hợp này, chúng ta đang tách trường mảng "order".
+		- Key: "preserveNullAndEmptyArrays", Value: true: Điều này xác định xem liệu các giá trị null
+			hoặc mảng trống sẽ được bảo tồn trong kết quả sau khi tách hay không.
+			Nếu được đặt là true, các giá trị null hoặc mảng trống sẽ được bảo tồn;
+			nếu false, các tài liệu có chứa giá trị null hoặc mảng trống sẽ bị loại bỏ khỏi kết quả.
+
+		=> câu lệnh này sẽ tạo ra một stage {$unwind} trong truy vấn aggregation,
+			tách trường mảng "order" trong tài liệu thành các tài liệu riêng lẻ,
+			và bảo tồn các giá trị null hoặc mảng trống trong kết quả sau khi tách.
+	*/
+	unwindOrderStage := bson.D{
+		{
+			Key: "$unwind",
+			Value: bson.D{
+				{Key: "path", Value: "$order"},
+				{Key: "preserveNullAndEmptyArrays", Value: true},
+			},
+		},
+	}
+
+	return lookupOrderStage, unwindOrderStage
+}
+
+func queryTableStage() (lookup, unwind bson.D) {
+	/*
+		- $lookup: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để thực hiện việc join dữ liệu từ một bộ sưu tập (collection) khác vào trong
+			bộ sưu tập hiện tại.
+		- Key: "from", Value: "table": Đây là tên của bộ sưu tập mà chúng ta muốn tham gia vào truy vấn.
+		- Key: "localField", Value: "order.table_id": Đây là trường trong bộ sưu tập hiện tại
+			mà chúng ta sẽ sử dụng để so khớp với trường trong bộ sưu tập từ.
+		- Key: "foreignField", Value: "table_id": Đây là trường trong bộ sưu tập từ mà chúng ta
+			sẽ sử dụng để so khớp với trường trong bộ sưu tập hiện tại.
+		- Key: "as", Value: "table": Đây là tên của trường mới mà chúng ta sẽ tạo ra
+			sau khi thực hiện việc join.
+
+		=> câu lệnh này sẽ tạo ra một stage {$lookup} trong truy vấn aggregation,
+			thực hiện việc join dữ liệu từ bộ sưu tập "table" vào bộ sưu tập hiện tại
+			dựa trên trường "table_id", và kết quả sẽ được lưu vào một trường mới có tên là "table".
+	*/
+	lookupTableStage := bson.D{
+		{
+			Key: "$lookup",
+			Value: bson.D{
+				{Key: "from", Value: "table"},
+				{Key: "localField", Value: "order.table_id"},
+				{Key: "foreignField", Value: "table_id"},
+				{Key: "as", Value: "table"},
+			},
+		},
+	}
+	/*
+		- $unwind: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để tách các mảng (arrays) trong tài liệu thành các tài liệu riêng lẻ.
+			Điều này hữu ích khi bạn muốn xử lý dữ liệu mảng như một tập hợp các tài liệu riêng lẻ.
+		- Key: "path", Value: "$table": Đây là đường dẫn đến trường mảng trong tài liệu mà chúng ta muốn tách.
+			Trong trường hợp này, chúng ta đang tách trường mảng "table".
+		- Key: "preserveNullAndEmptyArrays", Value: true: Điều này xác định xem liệu các giá trị null
+			hoặc mảng trống sẽ được bảo tồn trong kết quả sau khi tách hay không.
+			Nếu được đặt là true, các giá trị null hoặc mảng trống sẽ được bảo tồn;
+			nếu false, các tài liệu có chứa giá trị null hoặc mảng trống sẽ bị loại bỏ khỏi kết quả.
+
+		=> câu lệnh này sẽ tạo ra một stage {$unwind} trong truy vấn aggregation,
+			tách trường mảng "table" trong tài liệu thành các tài liệu riêng lẻ,
+			và bảo tồn các giá trị null hoặc mảng trống trong kết quả sau khi tách.
+	*/
+	unwindTableStage := bson.D{
+		{
+			Key: "$unwind",
+			Value: bson.D{
+				{Key: "path", Value: "$table"},
+				{Key: "preserveNullAndEmptyArrays", Value: true},
+			},
+		},
+	}
+
+	return lookupTableStage, unwindTableStage
+}
+
+func queryProjectStage() (project bson.D) {
+	/*
+		- $project: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để chọn ra một hoặc nhiều trường từ tài liệu và chỉ định lại các tên trường
+			hoặc tính toán trường mới.
+		- Key: "id", Value: 0: Điều này xác định rằng trường "id" sẽ không xuất hiện trong kết quả cuối cùng.
+		- Key: "amount", Value: "$food.price": Trường "amount" sẽ lấy giá trị của trường "price" từ tài liệu con "food".
+		- Key: "total_count", Value: 1: Trường "total_count" sẽ được bảo tồn trong kết quả cuối cùng.
+		- Key: "food_name", Value: "$food.name": Trường "food_name" sẽ lấy giá trị của trường "name" từ tài liệu con "food".
+		- Key: "food_image", Value: "$food.food_image": Trường "food_image" sẽ lấy giá trị của trường "food_image" từ tài liệu con "food".
+		- Key: "table_number", Value: "$table.table_number": Trường "table_number" sẽ lấy giá trị của trường "table_number" từ tài liệu con "table".
+		- Key: "table_id", Value: "$table.table_id": Trường "table_id" sẽ lấy giá trị của trường "table_id" từ tài liệu con "table".
+		- Key: "order_id", Value: "$order.order_id": Trường "order_id" sẽ lấy giá trị của trường "order_id" từ tài liệu con "order".
+		- Key: "price", Value: "$food.price": Trường "price" sẽ lấy giá trị của trường "price" từ tài liệu con "food".
+		- Key: "quantity", Value: 1: Trường "quantity" sẽ được thiết lập là 1 trong kết quả cuối cùng.
+
+		=> câu lệnh này sẽ tạo ra một stage $project trong truy vấn aggregation,
+			chọn ra các trường cần thiết từ các tài liệu con và chỉ định lại tên trường nếu cần.
+	*/
+	projectStage := bson.D{
+		{
+			Key: "$project",
+			Value: bson.D{
+				{Key: "id", Value: 0},
+				{Key: "amount", Value: "$food.price"},
+				{Key: "total_count", Value: 1},
+				{Key: "food_name", Value: "$food.name"},
+				{Key: "food_image", Value: "$food.food_image"},
+				{Key: "table_number", Value: "$table.table_number"},
+				{Key: "table_id", Value: "$table.table_id"},
+				{Key: "order_id", Value: "$order.order_id"},
+				{Key: "price", Value: "$food.price"},
+				{Key: "quantity", Value: 1},
+			},
+		},
+	}
+
+	return projectStage
+}
+
+func queryGroupStage() (project bson.D) {
+	//TODO: MISSING order_items
+	/*
+		- $group: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để nhóm các tài liệu lại với nhau dựa trên các trường cụ thể và
+			thực hiện các phép tính tổng hợp trên nhóm kết quả.
+		- Key: "_id": Đây là trường đại diện cho các giá trị của các trường nhóm.
+			Trong trường hợp này, chúng ta đang nhóm các tài liệu dựa trên các trường "order_id",
+			"table_id" và "table_number".
+		- Key: "payment_due", Value: bson.D{{Key: "$sum", Value: "$amount"}}:
+			Đây là phép tính tổng hợp trên trường "amount" để tính tổng số tiền cần thanh toán
+			("payment_due") trong từng nhóm.
+		- Key: "total_count", Value: bson.D{{Key: "$sum", Value: 1}}:
+			Đây là phép tính tổng hợp để đếm tổng số lượng tài liệu trong từng nhóm
+			và lưu vào trường "total_count".
+		- Key: "order_items", Value: bson.D{{Key: "$sum", Value: 1}}:
+			Đây là phép tính tổng hợp để đếm tổng số lượng các mặt hàng đặt hàng trong từng nhóm
+			và lưu vào trường "order_items".
+
+		=> câu lệnh này sẽ tạo ra một stage $group trong truy vấn aggregation,
+			nhóm các tài liệu dựa trên các trường "order_id", "table_id" và "table_number",
+			và thực hiện các phép tính tổng hợp để tính tổng số tiền cần thanh toán,
+			tổng số lượng tài liệu và tổng số lượng các mặt hàng đặt hàng trong từng nhóm.
+	*/
+	groupStage := bson.D{
+		{
+			Key: "$group",
+			Value: bson.D{
+				{
+					Key: "_id",
+					Value: bson.D{
+						{Key: "order_id", Value: "$order_id"},
+						{Key: "table_id", Value: "$table_id"},
+						{Key: "table_number", Value: "$table_number"},
+					},
+				},
+				{
+					Key:   "payment_due",
+					Value: bson.D{{Key: "$sum", Value: "$amount"}},
+				},
+				{
+					Key:   "total_count",
+					Value: bson.D{{Key: "$sum", Value: 1}},
+				},
+				{
+					Key:   "order_items",
+					Value: bson.D{{Key: "$sum", Value: 1}},
+				},
+			},
+		},
+	}
+
+	return groupStage
+}
+
+func queryProjectStage2() (project bson.D) {
+	/*
+		- $project: Là một trong các stage của aggregation framework của MongoDB,
+			được sử dụng để chọn ra một hoặc nhiều trường từ tài liệu
+			và chỉ định lại các tên trường hoặc tính toán trường mới.
+		- Key: "id", Value: 0: Điều này xác định rằng trường "id" sẽ không xuất hiện trong kết quả cuối cùng.
+		- Key: "payment_due", Value: 1: Trường "payment_due" sẽ được bảo tồn trong kết quả cuối cùng.
+		- Key: "total_count", Value: 1: Trường "total_count" sẽ được bảo tồn trong kết quả cuối cùng.
+		- Key: "table_number", Value: "$_id.table_number":
+			Trường "table_number" sẽ lấy giá trị của trường "table_number" từ trường "_id" của kết quả trước đó.
+		- Key: "order_items", Value: 1: Trường "order_items" sẽ được bảo tồn trong kết quả cuối cùng.
+
+		=> câu lệnh này sẽ tạo ra một stage $project trong truy vấn aggregation,
+			chọn ra các trường cần thiết từ kết quả trước đó và chỉ định lại tên trường nếu cần.
+			Trong trường hợp này, chúng ta cần lấy giá trị của trường "table_number" từ trường "_id"
+			của kết quả trước đó.
+	*/
+	projectStage2 := bson.D{
+		{
+			Key: "$project",
+			Value: bson.D{
+				{Key: "id", Value: 0},
+				{Key: "payment_due", Value: 1},
+				{Key: "total_count", Value: 1},
+				{Key: "table_number", Value: "$_id.table_number"},
+				{Key: "order_items", Value: 1},
+			},
+		},
+	}
+
+	return projectStage2
 }
