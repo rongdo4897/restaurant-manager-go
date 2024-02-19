@@ -1,0 +1,8 @@
+1, c.Param()
+    c.Param() được sử dụng để truy cập vào các tham số được truyền qua URL (URL parameters) hoặc các phần của đường dẫn (route parameters). 
+    Ví dụ, nếu bạn định nghĩa một tuyến đường như "/users/:id", thì bạn có thể truy cập giá trị của tham số ":id" bằng cách sử dụng c.Param("id").
+
+2, c.Query()
+    c.Query() được sử dụng để truy cập vào các tham số được truyền qua query string của URL.
+    Query string là phần của URL bắt đầu sau dấu "?" và chứa các cặp key-value, được phân tách bởi dấu "&". 
+    Ví dụ, trong URL "http://example.com/search?query=gin&limit=10", bạn có thể truy cập giá trị của tham số "query" bằng cách sử dụng c.Query("query").
