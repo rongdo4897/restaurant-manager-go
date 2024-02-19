@@ -178,6 +178,7 @@ func orderItemCreator(ctx context.Context, cancel context.CancelFunc, orderModel
 	orderModel.ID = primitive.NewObjectID()
 	orderModel.Order_id = orderModel.ID.Hex()
 
+	// Tạo dữ liệu orderModel lên mongo
 	orderCollection.InsertOne(ctx, orderModel)
 	defer cancel()
 

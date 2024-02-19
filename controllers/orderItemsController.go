@@ -105,8 +105,8 @@ func CreateOrderItem() gin.HandlerFunc {
 		orderModel.Order_date, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		orderModel.Table_id = orderItemPack.Table_id
 
-		// Lấy `order_id` dựa trên orderModel
-		order_id := orderItemOrderCreator(orderModel)
+		// func tạo data dựa trên orderModel và trả về `order_id` đã tạo
+		order_id := orderItemCreator(ctx, cancel, orderModel)
 
 		for _, orderItem := range orderItemPack.Order_items {
 			orderItem.Order_id = order_id
@@ -453,7 +453,6 @@ func queryProjectStage() (project bson.D) {
 }
 
 func queryGroupStage() (project bson.D) {
-	//TODO: MISSING order_items
 	/*
 		- $group: Là một trong các stage của aggregation framework của MongoDB,
 			được sử dụng để nhóm các tài liệu lại với nhau dựa trên các trường cụ thể và
@@ -468,8 +467,8 @@ func queryGroupStage() (project bson.D) {
 			Đây là phép tính tổng hợp để đếm tổng số lượng tài liệu trong từng nhóm
 			và lưu vào trường "total_count".
 		- Key: "order_items", Value: bson.D{{Key: "$sum", Value: 1}}:
-			Đây là phép tính tổng hợp để đếm tổng số lượng các mặt hàng đặt hàng trong từng nhóm
-			và lưu vào trường "order_items".
+			Phương thức $push được sử dụng để thêm các tài liệu gốc vào một mảng.
+			Trong trường hợp này, chúng ta thêm các tài liệu gốc vào mảng order_items.
 
 		=> câu lệnh này sẽ tạo ra một stage $group trong truy vấn aggregation,
 			nhóm các tài liệu dựa trên các trường "order_id", "table_id" và "table_number",
@@ -498,7 +497,7 @@ func queryGroupStage() (project bson.D) {
 				},
 				{
 					Key:   "order_items",
-					Value: bson.D{{Key: "$sum", Value: 1}},
+					Value: bson.D{{Key: "$push", Value: "$$ROOT"}},
 				},
 			},
 		},
