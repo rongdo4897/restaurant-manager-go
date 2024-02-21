@@ -9,8 +9,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rongdo4897/restaurant-manager-go/database"
+	"github.com/rongdo4897/restaurant-manager-go/helpers"
 	"github.com/rongdo4897/restaurant-manager-go/models"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -116,23 +118,62 @@ func GetUser() gin.HandlerFunc {
 
 func SignUp() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Convert the JSON data coming from postman to something that golang understands
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 
-		// Validate the data based on user struct
+		var userModel models.User
+		// Chuyển đổi request sang userModel
+		if err := c.BindJSON(&userModel); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		// Kiểm tra xem dữ liệu đã bao gồm các trường validate require chưa
+		if validationErr := validate.Struct(userModel); validationErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+			return
+		}
+		// Kiểm tra xem email đã được người dùng khác sử dụng chưa
+		countEmail, err := userCollection.CountDocuments(ctx, bson.M{"email": userModel.Email})
+		if err != nil {
+			log.Panic(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while checking for the email"})
+			return
+		}
+		// Băm mật khẩu
+		password := HashPassword(*userModel.Password)
+		userModel.Password = &password
+		// Kiểm tra xem phone number đã được người dùng khác sử dụng chưa
+		countPhone, err := userCollection.CountDocuments(ctx, bson.M{"phone": userModel.Phone})
+		if err != nil {
+			log.Panic(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while checking for the phone number"})
+			return
+		}
 
-		// You will check if the email has already been used by another user
-
-		// Hash password
-
-		// You will also check if the phone number has already been used by another user
-
-		// Create some extra details for the user object - created_at, updated_at, ID
-
+		// Kiểm tra xem nếu count > 0 không (tồn tại)
+		if countEmail > 0 || countPhone > 0 {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "this email or phone already exists"})
+			return
+		}
+		// Gán lại các giá trị khác
+		userModel.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		userModel.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		userModel.ID = primitive.NewObjectID()
+		userModel.User_id = userModel.ID.Hex()
 		// Generate token and refresh token (generate all tokens function from helpers)
+		token, refreshToken, _ := helpers.GenerateAllTokens(*userModel.Email, *userModel.First_name, *userModel.Last_name, userModel.User_id)
+		userModel.Token = &token
+		userModel.Refresh_token = &refreshToken
 
-		// If all ok, then you insert this new user into the user collection
+		// Insert vào mongo
+		result, err := userCollection.InsertOne(ctx, userModel)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "User item was not created - " + err.Error()})
+			return
+		}
+		defer cancel()
 
-		// return status ok and send the result back
+		c.JSON(http.StatusOK, result)
 	}
 }
 

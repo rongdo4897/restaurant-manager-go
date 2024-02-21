@@ -1,7 +1,7 @@
 package helpers
 
-func GenerateAllTokens() {
-
+func GenerateAllTokens(email, firstName, lastName, userId string) (string, string, error) {
+	return "", "", nil
 }
 
 func UpdateAllTokens() {
