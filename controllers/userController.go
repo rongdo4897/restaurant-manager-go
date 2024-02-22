@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var userCollection = database.OpenCollection(database.Client, "user")
@@ -160,7 +161,7 @@ func SignUp() gin.HandlerFunc {
 		userModel.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		userModel.ID = primitive.NewObjectID()
 		userModel.User_id = userModel.ID.Hex()
-		// Generate token and refresh token (generate all tokens function from helpers)
+		// Tạo token và refresh token (generate all tokens function from helpers)
 		token, refreshToken, _ := helpers.GenerateAllTokens(*userModel.Email, *userModel.First_name, *userModel.Last_name, userModel.User_id)
 		userModel.Token = &token
 		userModel.Refresh_token = &refreshToken
@@ -179,26 +180,65 @@ func SignUp() gin.HandlerFunc {
 
 func Login() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Convert the login data from postman which is in JSON to golang readable format
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 
-		// Find a user with that email and see if that user even exists
-
-		// Then you will verify the password
-
-		// If all goes well, then you will generate tokens
-
-		// Update tokens - token, refreshToken
-
+		var userModel models.User
+		var foundUserModel models.User
+		// Chuyển đổi request sang userModel
+		if err := c.BindJSON(&userModel); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		// Tìm kiếm user trên database với email
+		err := userCollection.FindOne(ctx, bson.M{"email": userModel.Email}).Decode(&foundUserModel)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "User not found, login seems to be incorrect - " + err.Error()})
+			return
+		}
+		// Xác thực mật khẩu
+		passwordIsValid, msg := VerifyPassword(*userModel.Password, *foundUserModel.Password)
+		if !passwordIsValid {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+			return
+		}
+		// Tạo token và refresh token (generate all tokens function from helpers)
+		token, refreshToken, _ := helpers.GenerateAllTokens(*foundUserModel.Email, *foundUserModel.First_name, *foundUserModel.Last_name, foundUserModel.User_id)
+		// Update lại tokens - token, refreshToken
+		helpers.UpdateAllTokens(token, refreshToken, foundUserModel.User_id)
 		// Return
+		defer cancel()
+
+		c.JSON(http.StatusOK, foundUserModel)
 	}
 }
 
 // Chuyển đổi mật khẩu đầu vào thành 1 chuỗi không thể bị đảo ngược
 func HashPassword(password string) string {
-	return ""
+	// Tạo ra 1 hash từ mật khẩu người dùng
+	// Tham số đầu tiên []byte(password) là mật khẩu của người dùng, được chuyển đổi thành một mảng byte.
+	// Tham số thứ hai 14 là cost factor, cũng gọi là work factor, quyết định độ phức tạp của thuật toán bcrypt.
+	// Độ phức tạp này càng cao thì việc tạo ra hash càng mất thời gian, từ đó làm cho việc tìm kiếm bằng cách thử từng giá trị hash trở nên khó khăn hơn đối với các kỹ thuật tấn công brute force hoặc dictionary attack.
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return string(bytes)
 }
 
 // So sánh xác thực mật khẩu
-func VerifyPassword(userPassword, providePassword string) (string, error) {
-	return "", nil
+func VerifyPassword(userPassword, providePassword string) (bool, string) {
+	// So sánh giữa password được cung cấp và password người dùng
+	err := bcrypt.CompareHashAndPassword([]byte(providePassword), []byte(userPassword))
+
+	check := true
+	msg := ""
+
+	if err != nil {
+		msg = "Login with password is incorrect"
+		check = false
+	}
+
+	return check, msg
 }

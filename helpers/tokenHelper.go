@@ -4,7 +4,7 @@ func GenerateAllTokens(email, firstName, lastName, userId string) (string, strin
 	return "", "", nil
 }
 
-func UpdateAllTokens() {
+func UpdateAllTokens(token, refreshToken, userId string) {
 
 }
 
