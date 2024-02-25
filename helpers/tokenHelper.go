@@ -1,12 +1,16 @@
 package helpers
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/rongdo4897/restaurant-manager-go/database"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type SignedDetails struct {
@@ -76,9 +80,65 @@ func GenerateAllTokens(email, firstName, lastName, userId string) (string, strin
 }
 
 func UpdateAllTokens(token, refreshToken, userId string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
+	var updateObj primitive.D
+
+	// Cập nhật đối tượng update
+	updateObj = append(updateObj, bson.E{Key: "token", Value: token})
+	updateObj = append(updateObj, bson.E{Key: "refresh_token", Value: refreshToken})
+
+	update_at, _ := time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	updateObj = append(updateObj, bson.E{Key: "updated_at", Value: update_at})
+
+	// Đây là một biến boolean được sử dụng để chỉ định xem truy vấn cập nhật có nên thực hiện một phép chèn mới (upsert) nếu không tìm thấy tài liệu phù hợp không.
+	// Trong trường hợp này, giá trị true cho biết rằng upsert được kích hoạt.
+	upsert := true
+	// truy vấn cập nhật sẽ thực hiện một phép upsert nếu không tìm thấy tài liệu phù hợp vì đã set = true.
+	opt := options.UpdateOptions{
+		Upsert: &upsert,
+	}
+
+	// Tạo 1 bản ghi từ `food_id` bên trên để dùng làm giá trị filter
+	filter := bson.M{"user_id": userId}
+
+	// Cập nhật lại mongo
+	_, err := userCollection.UpdateOne(
+		ctx,
+		filter,
+		bson.D{{Key: "$set", Value: updateObj}},
+		&opt,
+	)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
 }
 
-func ValidateToken() {
+func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&SignedDetails{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(SECRET_KEY), nil
+		},
+	)
 
+	if err != nil {
+		return nil, err.Error()
+	}
+
+	// Token không hợp lệ
+	claims, ok := token.Claims.(*SignedDetails)
+	if !ok {
+		msg = "Token is invalid"
+	}
+
+	// Token hết hạn
+	if claims.ExpiresAt < time.Now().Local().Unix() {
+		msg = "Token is expired"
+	}
+
+	return claims, msg
 }
