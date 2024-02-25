@@ -12,7 +12,7 @@ import (
 
 // Trả về 1 client kết nối tới mongo
 func DBInstance() *mongo.Client {
-	MongoURL := "mongodb://localhost:27017"
+	MongoURL := "mongodb://development:testpassword@localhost:27017"
 
 	client, err := mongo.NewClient(options.Client().ApplyURI(MongoURL))
 	if err != nil {
