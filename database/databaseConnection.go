@@ -13,22 +13,26 @@ import (
 // Trả về 1 client kết nối tới mongo
 func DBInstance() *mongo.Client {
 	MongoURL := "mongodb://development:testpassword@localhost:27017"
-
-	client, err := mongo.NewClient(options.Client().ApplyURI(MongoURL))
-	if err != nil {
-		log.Fatal(err)
-	}
+	clientOptions := options.Client().ApplyURI(MongoURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	err = client.Connect(ctx)
+	// Tạo kết nối
+	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("================================================")
-	fmt.Println("Connected to MongoDB")
+	// Kiểm tra kết nối tới mongo
+	err = client.Ping(context.TODO(), nil)
+	if err != nil {
+		log.Fatal("failed to connect to mongodb: ", err)
+		return nil
+	}
+
+	fmt.Println("Successfully connected to mongodb")
+
 	return client
 }
 

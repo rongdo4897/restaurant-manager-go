@@ -106,7 +106,7 @@ func GetUser() gin.HandlerFunc {
 		var userModel models.User
 
 		// Trả về 1 đối tượng food từ `user_id` được chỉ định, đối tượng nhận về được tham chiếu lại vào `userModel`
-		err := userCollection.FindOne(ctx, bson.M{"food_id": userId}).Decode(&userModel)
+		err := userCollection.FindOne(ctx, bson.M{"user_id": userId}).Decode(&userModel)
 		// Trả về lỗi nếu tồn tại
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while fetching the user item"})
