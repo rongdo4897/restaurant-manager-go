@@ -71,7 +71,7 @@ func GetUsers() gin.HandlerFunc {
 			{
 				Key: "$project",
 				Value: bson.D{
-					{Key: "_id", Value: 0},
+					{Key: "_id", Value: 1},
 					{Key: "total_count", Value: 1},
 					{Key: "user_items", Value: bson.D{{Key: "$slice", Value: []interface{}{"$data", startIndex, recordPerPage}}}},
 				},
@@ -94,7 +94,7 @@ func GetUsers() gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, allUsers[0])
+		c.JSON(http.StatusOK, allUsers)
 	}
 }
 
